@@ -2,10 +2,9 @@ package main
 
 import (
 	"encoding/binary"
+	"flag"
 	"fmt"
-	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,61 +17,33 @@ import (
 
 type Config struct {
 	replicas map[int]simple_raft.ReplicaInfo
-	index    int
+	id       int
 	http     string
 }
 
 func getConfig() Config {
 	cfg := Config{}
 	cfg.replicas = make(map[int]simple_raft.ReplicaInfo)
-	var node string
-	for i, arg := range os.Args[1:] {
-		if arg == "--node" {
-			var err error
-			node = os.Args[i+2]
-			cfg.index, err = strconv.Atoi(node)
-			if err != nil {
-				log.Fatal("Expected $value to be a valid integer in `--node $value`, got: %s", node)
-			}
-			i++
-			continue
+
+	id := flag.Int("node", 1, "node id, integer")
+	http := flag.String("http", ":5030", "node http addr, string")
+	replicasString := flag.String("replicas", "", "replicas info in format $id1,$ip1;$id2,$ip2, string")
+	flag.Parse()
+
+	cfg.http = *http
+	cfg.id = *id
+
+	for _, part := range strings.Split(*replicasString, ";") {
+		var replicaInfo simple_raft.ReplicaInfo
+
+		idAddress := strings.Split(part, ",")
+		var err error
+		id, err := strconv.ParseUint(idAddress[0], 10, 64)
+		if err != nil {
+			panic("incorrect id in replicas string")
 		}
-
-		if arg == "--http" {
-			cfg.http = os.Args[i+2]
-			i++
-			continue
-		}
-
-		if arg == "--cluster" {
-			cluster := os.Args[i+2]
-			var clusterEntry simple_raft.ReplicaInfo
-			for _, part := range strings.Split(cluster, ";") {
-				idAddress := strings.Split(part, ",")
-				var err error
-				id, err := strconv.ParseUint(idAddress[0], 10, 64)
-				if err != nil {
-					log.Fatal("Expected $id to be a valid integer in `--cluster $id,$ip`, got: %s", idAddress[0])
-				}
-				clusterEntry.Address = idAddress[1]
-				cfg.replicas[int(id)] = clusterEntry
-			}
-
-			i++
-			continue
-		}
-	}
-
-	if node == "" {
-		log.Fatal("Missing required parameter: --node $index")
-	}
-
-	if cfg.http == "" {
-		log.Fatal("Missing required parameter: --http $address")
-	}
-
-	if len(cfg.replicas) == 0 {
-		log.Fatal("Missing required parameter: --cluster $node1Id,$node1Address;...;$nodeNId,$nodeNAddress")
+		replicaInfo.Address = idAddress[1]
+		cfg.replicas[int(id)] = replicaInfo
 	}
 
 	return cfg
@@ -245,7 +216,7 @@ func main() {
 		stateLock: sync.Mutex{},
 	}
 
-	s := simple_raft.NewServer(cfg.replicas, stateMachine, cfg.index)
+	s := simple_raft.NewServer(cfg.replicas, stateMachine, cfg.id)
 	go s.Launch()
 
 	storage := KeyValueStorage{
