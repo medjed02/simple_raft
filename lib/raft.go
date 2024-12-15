@@ -27,11 +27,12 @@ type LogEntry struct {
 }
 
 type ReplicaInfo struct {
-	Address    string
-	Vote       int
-	NextIndex  int
-	MatchIndex int
-	RpcClient  *rpc.Client
+	Address     string
+	HttpAddress string
+	Vote        int
+	NextIndex   int
+	MatchIndex  int
+	RpcClient   *rpc.Client
 }
 
 type StateMachine interface {
@@ -433,18 +434,28 @@ func (s *ConsensusServer) GetGoodReplica() string {
 		}
 	}
 	fmt.Println("find replicas", maxMatchIndex, goodReplicaIds)
+	if maxMatchIndex < s.commitIndex {
+		return ""
+	}
 	if len(goodReplicaIds) != 0 {
 		goodReplica := goodReplicaIds[rand.Intn(len(goodReplicaIds))]
-		return s.replicas[goodReplica].Address
+		return s.replicas[goodReplica].HttpAddress
 	}
 	return ""
+}
+
+func (s *ConsensusServer) GetCommitIndex() int {
+	s.stateLock.Lock()
+	defer s.stateLock.Unlock()
+
+	return s.commitIndex
 }
 
 func (s *ConsensusServer) GetLeader() string {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	fmt.Println("no, leader is", s.leaderId)
-	return s.replicas[s.leaderId].Address
+	return s.replicas[s.leaderId].HttpAddress
 }
 
 func (s *ConsensusServer) Launch() {
