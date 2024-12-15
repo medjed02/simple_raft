@@ -43,6 +43,7 @@ func getConfig() Config {
 			panic("incorrect id in replicas string")
 		}
 		replicaInfo.Address = idAddress[1]
+		replicaInfo.HttpAddress = strings.Split(replicaInfo.Address, ":")[0] + ":" + strconv.Itoa(int(5029+id))
 		cfg.replicas[int(id)] = replicaInfo
 	}
 
@@ -162,16 +163,35 @@ func (s *KeyValueStorage) casHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *KeyValueStorage) getHandler(w http.ResponseWriter, r *http.Request) {
+	s.StateMachine.stateLock.Lock()
+	defer s.StateMachine.stateLock.Unlock()
+
 	key := r.URL.Query().Get("key")
+	commitIndex := r.URL.Query().Get("commited")
 
 	var value string
 	var err error
 
 	replica := s.Consensus.GetGoodReplica()
+	myCommitIndex := strconv.Itoa(s.Consensus.GetCommitIndex())
 	if replica != "" {
+		written := 0
+		for written < len(myCommitIndex) {
+			n, err := w.Write([]byte(myCommitIndex)[written:])
+			if err != nil {
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
+			written += n
+		}
+
 		http.Redirect(w, r, replica, http.StatusFound)
 		return
 	} else {
+		if len(commitIndex) != 0 && myCommitIndex != commitIndex {
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
 		v, ok := s.StateMachine.db[key]
 		if !ok {
 			err = fmt.Errorf("Key not found")
