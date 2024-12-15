@@ -175,16 +175,7 @@ func (s *KeyValueStorage) getHandler(w http.ResponseWriter, r *http.Request) {
 	replica := s.Consensus.GetGoodReplica()
 	myCommitIndex := strconv.Itoa(s.Consensus.GetCommitIndex())
 	if replica != "" {
-		written := 0
-		for written < len(myCommitIndex) {
-			n, err := w.Write([]byte(myCommitIndex)[written:])
-			if err != nil {
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				return
-			}
-			written += n
-		}
-
+		w.Header().Add("CommitIndex", myCommitIndex)
 		http.Redirect(w, r, replica, http.StatusFound)
 		return
 	} else {
